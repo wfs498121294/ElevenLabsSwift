@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Combine
 
+
 /// Main class for ElevenLabsSwift package
 public class ElevenLabsSwift {
     public static let version = "1.0.0"
@@ -382,13 +383,25 @@ public class ElevenLabsSwift {
         private var previousSamples: [Int16] = Array(repeating: 0, count: 10)
         private var isFirstBuffer = true
 
+        private let audioConcatProcessor = ElevenLabsSwift.AudioConcatProcessor()
+        private var outputBuffers: [[Float]] = [[]]
+
         private init(connection: Connection, input: Input, output: Output, callbacks: Callbacks) {
             self.connection = connection
             self.input = input
             self.output = output
             self.callbacks = callbacks
             
+            // Set the onProcess callback
+            audioConcatProcessor.onProcess = { [weak self] finished in
+                guard let self = self else { return }
+                if finished {
+                    self.updateMode(.listening)
+                }
+            }
+            
             setupWebSocket()
+            configureAudioSession()
             setupAudioProcessing()
         }
         
@@ -472,7 +485,6 @@ public class ElevenLabsSwift {
             guard let event = json["interruption_event"] as? [String: Any],
                   let eventId = event["event_id"] as? Int else { return }
             lastInterruptTimestamp = eventId
-            fadeOutAudio()
         }
         
         private func handleAgentResponseEvent(_ json: [String: Any]) {
@@ -517,33 +529,92 @@ public class ElevenLabsSwift {
             }
         }
         
-        private func setupAudioProcessing() {
-            let bufferSize: AVAudioFrameCount = 4096
-            let inputFormat = input.inputNode.inputFormat(forBus: 0)
-            
-            input.mixer.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, _ in
-                guard let self = self, self.isProcessingInput else { return }
-                
-                let channelData = buffer.floatChannelData?[0]
-                let frameLength = Int(buffer.frameLength)
-                
-                var pcmBuffer = [Int16](repeating: 0, count: frameLength)
-                var maxSample: Float = 0
-                
-                for i in 0..<frameLength {
-                    guard let sample = channelData?[i] else { continue }
-                    maxSample = max(maxSample, abs(sample))
-                    
-                    pcmBuffer[i] = abs(sample) < 0.02 ? 0 : Int16(sample * Float(Int16.max))
-                }
-                
-                let data = Data(buffer: pcmBuffer)
-                let base64 = ElevenLabsSwift.arrayBufferToBase64(data)
-                
-                let message: [String: Any] = ["type": "user_audio_chunk", "user_audio_chunk": base64]
-                self.sendWebSocketMessage(message)
-            }
+  private func setupAudioProcessing() {
+    let bufferSize: AVAudioFrameCount = 4096
+    let inputFormat = input.inputNode.inputFormat(forBus: 0)
+    
+    // Ensure mono channel
+    guard inputFormat.channelCount == 1 else {
+        print("Input has \(inputFormat.channelCount) channels. Expected mono (1 channel).")
+        return
+    }
+    
+    input.mixer.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, _ in
+        guard let self = self, self.isProcessingInput else { return }
+        
+        guard let channelData = buffer.floatChannelData?[0] else {
+            print("Failed to retrieve channel data.")
+            return
         }
+        let frameLength = Int(buffer.frameLength)
+        
+        // Initialize PCM buffer
+        var pcmBuffer = [Int16](repeating: 0, count: frameLength)
+        var maxSample: Float = 0
+        
+        for i in 0..<frameLength {
+            let sample = channelData[i]
+            maxSample = max(maxSample, abs(sample))
+            
+            // Convert Float sample to Int16 PCM, clamped and scaled
+            let clampedSample = max(-1.0, min(1.0, sample))
+            pcmBuffer[i] = Int16(clampedSample * Float(Int16.max))
+        }
+        
+        // Debug: Log first few PCM samples
+        if frameLength > 0 {
+            let sampleLogCount = min(10, frameLength)
+            let firstSamples = pcmBuffer.prefix(sampleLogCount)
+            print("First \(sampleLogCount) PCM Samples: \(firstSamples)")
+        }
+        
+        // Convert [Int16] to Data with little-endian byte order
+        let littleEndianPcmBuffer = pcmBuffer.map { $0.littleEndian }
+        let data = littleEndianPcmBuffer.withUnsafeBufferPointer { bufferPointer -> Data in
+            return Data(buffer: bufferPointer)
+        }
+        
+        // Debug: Log first few bytes of data
+        if data.count >= 10 {
+            let firstBytes = data.prefix(10).map { String(format: "%02x", $0) }.joined(separator: " ")
+            print("First 10 Bytes of Data: \(firstBytes)")
+        }
+        
+        // Base64 encode the raw bytes
+        let base64 = data.base64EncodedString()
+        
+        // Debug: Log base64 string length
+        print("Base64 length: \(base64.count)")
+        
+        // Optional: Log a snippet of the base64 string
+        let snippetLength = min(50, base64.count)
+        let base64Snippet = base64.prefix(snippetLength)
+        print("Base64 snippet: \(base64Snippet)...")
+        
+        // Construct JSON with only "user_audio_chunk" key
+        let message: [String: Any] = ["user_audio_chunk": base64]
+        
+        // Send the WebSocket message
+        self.sendWebSocketMessage(message)
+        
+        // Process the buffer using AudioConcatProcessor
+        self.audioConcatProcessor.handleMessage(["type": "buffer", "buffer": data])
+        self.audioConcatProcessor.process(outputs: &self.outputBuffers)
+    }
+}
+
+
+private func configureAudioSession() {
+    let audioSession = AVAudioSession.sharedInstance()
+    do {
+        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+        try audioSession.setPreferredSampleRate(16000)
+        try audioSession.setActive(true)
+        print("Audio Session configured with sample rate: \(audioSession.sampleRate)")
+    } catch {
+        print("Failed to configure audio session: \(error)")
+    }
+}
         
         private func addAudioBase64Chunk(_ chunk: String) {
             guard let data = ElevenLabsSwift.base64ToArrayBuffer(chunk) else {
@@ -551,9 +622,10 @@ public class ElevenLabsSwift {
                 return
             }
 
+            let sampleRate = Double(connection.sampleRate)
             guard let audioFormat = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
-                sampleRate: Double(connection.sampleRate),
+                sampleRate: sampleRate,
                 channels: 1,
                 interleaved: false
             ) else {
@@ -606,12 +678,9 @@ public class ElevenLabsSwift {
         }
         
         private func fadeOutAudio() {
-            updateMode(.listening)
-            output.mixer.volume = 0
+    
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                self?.output.mixer.volume = self?.volume ?? 1.0
-            }
+           
         }
         
         private func updateMode(_ newMode: Mode) {
