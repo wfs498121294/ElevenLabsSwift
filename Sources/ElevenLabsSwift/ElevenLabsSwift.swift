@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Combine
+import os.log
 
 
 /// Main class for ElevenLabsSwift package
@@ -386,6 +387,8 @@ public class ElevenLabsSwift {
         private let audioConcatProcessor = ElevenLabsSwift.AudioConcatProcessor()
         private var outputBuffers: [[Float]] = [[]]
 
+        private let logger = Logger(subsystem: "com.elevenlabs.ElevenLabsSwift", category: "Conversation")
+
         private init(connection: Connection, input: Input, output: Output, callbacks: Callbacks) {
             self.connection = connection
             self.input = input
@@ -423,6 +426,7 @@ public class ElevenLabsSwift {
             callbacks.onConnect(connection.conversationId)
             updateStatus(.connected)
             receiveMessages()
+            
         }
         
         private func receiveMessages() {
@@ -431,8 +435,10 @@ public class ElevenLabsSwift {
                 
                 switch result {
                 case .success(let message):
+                    self.logIncomingMessage(message)
                     self.handleWebSocketMessage(message)
                 case .failure(let error):
+                    self.logger.error("WebSocket error: \(error.localizedDescription)")
                     self.callbacks.onError("WebSocket error", error)
                     self.updateStatus(.disconnected)
                 }
@@ -440,6 +446,17 @@ public class ElevenLabsSwift {
                 if self.status == .connected {
                     self.receiveMessages()
                 }
+            }
+        }
+        
+        private func logIncomingMessage(_ message: URLSessionWebSocketTask.Message) {
+            switch message {
+            case .string(let text):
+                logger.info("↓ Received WebSocket message: \(text)")
+            case .data(let data):
+                logger.info("↓ Received WebSocket binary data: \(data.count) bytes")
+            @unknown default:
+                logger.warning("↓ Received unknown WebSocket message type")
             }
         }
         
@@ -522,86 +539,100 @@ public class ElevenLabsSwift {
                 return
             }
             
+            logger.info("↑ Sending WebSocket message: \(string)")
+            
             connection.socket.send(.string(string)) { [weak self] error in
                 if let error = error {
+                    self?.logger.error("Failed to send WebSocket message: \(error.localizedDescription)")
                     self?.callbacks.onError("Failed to send WebSocket message", error)
                 }
             }
         }
         
-  private func setupAudioProcessing() {
-    let bufferSize: AVAudioFrameCount = 4096
-    let inputFormat = input.inputNode.inputFormat(forBus: 0)
-    
-    // Ensure mono channel
-    guard inputFormat.channelCount == 1 else {
-        print("Input has \(inputFormat.channelCount) channels. Expected mono (1 channel).")
-        return
-    }
-    
-    input.mixer.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, _ in
-        guard let self = self, self.isProcessingInput else { return }
-        
-        guard let channelData = buffer.floatChannelData?[0] else {
-            print("Failed to retrieve channel data.")
-            return
-        }
-        let frameLength = Int(buffer.frameLength)
-        
-        // Initialize PCM buffer
-        var pcmBuffer = [Int16](repeating: 0, count: frameLength)
-        var maxSample: Float = 0
-        
-        for i in 0..<frameLength {
-            let sample = channelData[i]
-            maxSample = max(maxSample, abs(sample))
+        private func setupAudioProcessing() {
+            let bufferSize: AVAudioFrameCount = 4096
+            let inputFormat = input.inputNode.inputFormat(forBus: 0)
             
-            // Convert Float sample to Int16 PCM, clamped and scaled
-            let clampedSample = max(-1.0, min(1.0, sample))
-            pcmBuffer[i] = Int16(clampedSample * Float(Int16.max))
+            // Desired output format (16000 Hz, mono, float32)
+            guard let outputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false) else {
+                logger.error("Failed to create output audio format for resampling.")
+                return
+            }
+
+            guard let audioConverter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+                logger.error("Failed to create audio converter.")
+                return
+            }
+            
+            input.mixer.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, _ in
+                guard let self = self, self.isProcessingInput else { return }
+                
+                guard let channelData = buffer.floatChannelData?[0] else {
+                    self.logger.error("Failed to retrieve channel data.")
+                    return
+                }
+                
+                // Create input PCM buffer for the original data
+                let inputPCMBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: buffer.frameCapacity)!
+                inputPCMBuffer.frameLength = buffer.frameLength
+                
+                // Manually copy the audio data from the input buffer to the new PCM buffer
+                for channel in 0..<Int(inputFormat.channelCount) {
+                    let inputChannelData = buffer.floatChannelData![channel]
+                    let outputChannelData = inputPCMBuffer.floatChannelData![channel]
+                    for frame in 0..<Int(buffer.frameLength) {
+                        outputChannelData[frame] = inputChannelData[frame]
+                    }
+                }
+                
+                // Create output PCM buffer for resampled data
+                guard let outputPCMBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: AVAudioFrameCount(bufferSize)) else {
+                    self.logger.error("Failed to create output PCM buffer for resampled data.")
+                    return
+                }
+                
+                var errorOccurred = false
+                audioConverter.convert(to: outputPCMBuffer, error: nil) { inNumPackets, outStatus in
+                    outStatus.pointee = .haveData
+                    return inputPCMBuffer
+                }
+                
+                // Check if the output buffer was successfully filled
+                if errorOccurred {
+                    self.logger.error("Error during resampling.")
+                    return
+                }
+                
+                // Convert resampled float32 buffer to Int16 PCM and then to base64
+                var pcmBuffer = [Int16](repeating: 0, count: Int(outputPCMBuffer.frameLength))
+                let frameLength = Int(outputPCMBuffer.frameLength)
+                
+                for i in 0..<frameLength {
+                    let sample = outputPCMBuffer.floatChannelData![0][i]
+                    pcmBuffer[i] = Int16(max(-1.0, min(1.0, sample)) * Float(Int16.max))
+                }
+                
+                // Convert [Int16] to Data with little-endian byte order
+                let littleEndianPcmBuffer = pcmBuffer.map { $0.littleEndian }
+                let data = littleEndianPcmBuffer.withUnsafeBufferPointer { Data(buffer: $0) }
+                
+                // Base64 encode the resampled data
+                let base64 = data.base64EncodedString()
+                
+                // Log the audio chunk being sent
+                self.logger.info("↑ Sending resampled audio chunk: \(base64.prefix(50))...")
+                
+                // Send the WebSocket message
+                let message: [String: Any] = ["user_audio_chunk": base64]
+                self.sendWebSocketMessage(message)
+                
+                // Process the buffer using AudioConcatProcessor
+                self.audioConcatProcessor.handleMessage(["type": "buffer", "buffer": data])
+                self.audioConcatProcessor.process(outputs: &self.outputBuffers)
+            }
         }
-        
-        // Debug: Log first few PCM samples
-        if frameLength > 0 {
-            let sampleLogCount = min(10, frameLength)
-            let firstSamples = pcmBuffer.prefix(sampleLogCount)
-            print("First \(sampleLogCount) PCM Samples: \(firstSamples)")
-        }
-        
-        // Convert [Int16] to Data with little-endian byte order
-        let littleEndianPcmBuffer = pcmBuffer.map { $0.littleEndian }
-        let data = littleEndianPcmBuffer.withUnsafeBufferPointer { bufferPointer -> Data in
-            return Data(buffer: bufferPointer)
-        }
-        
-        // Debug: Log first few bytes of data
-        if data.count >= 10 {
-            let firstBytes = data.prefix(10).map { String(format: "%02x", $0) }.joined(separator: " ")
-            print("First 10 Bytes of Data: \(firstBytes)")
-        }
-        
-        // Base64 encode the raw bytes
-        let base64 = data.base64EncodedString()
-        
-        // Debug: Log base64 string length
-        print("Base64 length: \(base64.count)")
-        
-        // Optional: Log a snippet of the base64 string
-        let snippetLength = min(50, base64.count)
-        let base64Snippet = base64.prefix(snippetLength)
-        print("Base64 snippet: \(base64Snippet)...")
-        
-        // Construct JSON with only "user_audio_chunk" key
-        let message: [String: Any] = ["user_audio_chunk": base64]
-        
-        // Send the WebSocket message
-        self.sendWebSocketMessage(message)
-        
-        // Process the buffer using AudioConcatProcessor
-        self.audioConcatProcessor.handleMessage(["type": "buffer", "buffer": data])
-        self.audioConcatProcessor.process(outputs: &self.outputBuffers)
-    }
-}
+
+
 
 
 private func configureAudioSession() {
@@ -617,6 +648,8 @@ private func configureAudioSession() {
 }
         
         private func addAudioBase64Chunk(_ chunk: String) {
+            logger.info("↓ Received audio chunk: \(chunk.prefix(50))...")
+            
             guard let data = ElevenLabsSwift.base64ToArrayBuffer(chunk) else {
                 callbacks.onError("Failed to decode audio chunk", nil)
                 return
@@ -704,13 +737,6 @@ private func configureAudioSession() {
             input.close()
             output.close()
             updateStatus(.disconnected)
-        }
-        
-        /// Sets the output volume
-        /// - Parameter newVolume: New volume level
-        public func setVolume(_ newVolume: Float) {
-            volume = newVolume
-            output.mixer.volume = newVolume
         }
         
         /// Retrieves the conversation ID
