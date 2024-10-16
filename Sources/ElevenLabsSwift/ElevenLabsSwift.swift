@@ -260,7 +260,7 @@ public class ElevenLabsSwift {
             self.audioQueue = DispatchQueue(label: "com.elevenlabs.audioQueue", qos: .userInteractive)
         }
         
-        /// Creates and starts an audio output session
+        /// Creates an audio output session
         /// - Parameter sampleRate: Desired sample rate
         /// - Returns: A configured `Output` instance
         public static func create(sampleRate: Double) async throws -> Output {
@@ -278,7 +278,8 @@ public class ElevenLabsSwift {
             engine.connect(playerNode, to: mixer, format: format)
             engine.connect(mixer, to: engine.mainMixerNode, format: format)
             
-            try engine.start()
+            // Remove engine.start() from here
+            
             return Output(engine: engine, playerNode: playerNode, mixer: mixer)
         }
         
@@ -403,8 +404,10 @@ public class ElevenLabsSwift {
             }
             
             setupWebSocket()
-            configureAudioSession()
+            // Remove configureAudioSession() from here
             setupAudioProcessing()
+            
+            // Remove playerNode.play() from here
         }
         
         /// Starts a new conversation session
@@ -413,11 +416,30 @@ public class ElevenLabsSwift {
         ///   - callbacks: Callbacks for conversation events
         /// - Returns: A started `Conversation` instance
         public static func startSession(config: SessionConfig, callbacks: Callbacks = Callbacks()) async throws -> Conversation {
+            // Step 1: Configure the audio session
+            try ElevenLabsSwift.configureAudioSession()
+
+            // Step 2: Create the WebSocket connection
             let connection = try await Connection.create(config: config)
+            
+            // Step 3: Create the audio input
             let input = try await Input.create(sampleRate: Double(connection.sampleRate))
+            
+            // Step 4: Create the audio output
             let output = try await Output.create(sampleRate: Double(connection.sampleRate))
+            
+            // Step 5: Initialize the Conversation
             let conversation = Conversation(connection: connection, input: input, output: output, callbacks: callbacks)
+            
+            // Step 6: Start the AVAudioEngine
+            try output.engine.start()
+            
+            // Step 7: Start the player node
+            output.playerNode.play()
+            
+            // Step 8: Start recording
             conversation.startRecording()
+            
             return conversation
         }
         
@@ -621,29 +643,8 @@ public class ElevenLabsSwift {
                 self.audioConcatProcessor.handleMessage(["type": "buffer", "buffer": data])
                 self.audioConcatProcessor.process(outputs: &self.outputBuffers)
             }
+            output.engine.prepare()
         }
-        
-        
-        
-        
-        private func configureAudioSession() {
-            let audioSession = AVAudioSession.sharedInstance()
-            do {
-                // Set category to play and record with voiceChat mode for echo cancellation
-                try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
-                
-                // Set preferred sample rate
-                try audioSession.setPreferredSampleRate(16000)
-                
-                // Activate the audio session
-                try audioSession.setActive(true)
-                
-                print("Audio Session configured with sample rate: \(audioSession.sampleRate)")
-            } catch {
-                print("Failed to configure audio session: \(error)")
-            }
-        }
-        
         
         private func addAudioBase64Chunk(_ chunk: String) {
             
@@ -816,6 +817,27 @@ public class ElevenLabsSwift {
             case .failedToCreateAudioFormat:
                 return "Failed to create the audio format."
             }
+        }
+    }
+    
+    // MARK: - Audio Session Configuration
+    
+    private static func configureAudioSession() throws {
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            // Set category to play and record with voiceChat mode for echo cancellation
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+            
+            // Set preferred sample rate
+            try audioSession.setPreferredSampleRate(16000)
+            
+            // Activate the audio session
+            try audioSession.setActive(true)
+            
+            print("Audio Session configured with sample rate: \(audioSession.sampleRate)")
+        } catch {
+            print("Failed to configure audio session: \(error)")
+            throw error
         }
     }
 }
