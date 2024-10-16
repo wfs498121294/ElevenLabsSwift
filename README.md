@@ -26,6 +26,7 @@ Add the Elevenlabs Conversational AI Swift SDK to your project using Swift Packa
    ```swift
    import ElevenLabsSwift
    ```
+6. Ensure `NSMicrophoneUsageDescription` is added to your Info.plist to explain microphone access.
 
 ## Usage
 
