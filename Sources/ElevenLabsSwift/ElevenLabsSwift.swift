@@ -16,7 +16,7 @@ public class ElevenLabsSwift {
     public static func arrayBufferToBase64(_ data: Data) -> String {
         data.base64EncodedString()
     }
-
+    
     /// Converts a Base64 encoded string to an array of bytes
     /// - Parameter base64: The Base64 encoded string
     /// - Returns: The decoded data
@@ -233,7 +233,6 @@ public class ElevenLabsSwift {
             engine.connect(inputNode, to: mixer, format: inputFormat)
             
             let outputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: inputFormat.sampleRate, channels: 1, interleaved: false)!
-            engine.connect(mixer, to: engine.mainMixerNode, format: outputFormat)
             
             try engine.start()
             return Input(engine: engine, inputNode: inputNode, mixer: mixer)
@@ -253,7 +252,7 @@ public class ElevenLabsSwift {
         public let playerNode: AVAudioPlayerNode
         public let mixer: AVAudioMixerNode
         internal let audioQueue: DispatchQueue
-
+        
         private init(engine: AVAudioEngine, playerNode: AVAudioPlayerNode, mixer: AVAudioMixerNode) {
             self.engine = engine
             self.playerNode = playerNode
@@ -346,33 +345,33 @@ public class ElevenLabsSwift {
         private let volumeLock = NSLock()
         private let lastInterruptTimestampLock = NSLock()
         private let isProcessingInputLock = NSLock()
-
+        
         private var _mode: Mode = .listening
         private var _status: Status = .connecting
         private var _volume: Float = 1.0
         private var _lastInterruptTimestamp: Int = 0
         private var _isProcessingInput: Bool = true
-
+        
         private var mode: Mode {
             get { modeLock.withLock { _mode } }
             set { modeLock.withLock { _mode = newValue } }
         }
-
+        
         private var status: Status {
             get { statusLock.withLock { _status } }
             set { statusLock.withLock { _status = newValue } }
         }
-
+        
         private var volume: Float {
             get { volumeLock.withLock { _volume } }
             set { volumeLock.withLock { _volume = newValue } }
         }
-
+        
         private var lastInterruptTimestamp: Int {
             get { lastInterruptTimestampLock.withLock { _lastInterruptTimestamp } }
             set { lastInterruptTimestampLock.withLock { _lastInterruptTimestamp = newValue } }
         }
-
+        
         private var isProcessingInput: Bool {
             get { isProcessingInputLock.withLock { _isProcessingInput } }
             set { isProcessingInputLock.withLock { _isProcessingInput = newValue } }
@@ -380,15 +379,15 @@ public class ElevenLabsSwift {
         
         private var audioBuffers: [AVAudioPCMBuffer] = []
         private let audioBufferLock = NSLock()
-
+        
         private var previousSamples: [Int16] = Array(repeating: 0, count: 10)
         private var isFirstBuffer = true
-
+        
         private let audioConcatProcessor = ElevenLabsSwift.AudioConcatProcessor()
         private var outputBuffers: [[Float]] = [[]]
-
+        
         private let logger = Logger(subsystem: "com.elevenlabs.ElevenLabsSwift", category: "Conversation")
-
+        
         private init(connection: Connection, input: Input, output: Output, callbacks: Callbacks) {
             self.connection = connection
             self.input = input
@@ -421,7 +420,7 @@ public class ElevenLabsSwift {
             conversation.startRecording()
             return conversation
         }
-
+        
         private func setupWebSocket() {
             callbacks.onConnect(connection.conversationId)
             updateStatus(.connected)
@@ -435,7 +434,7 @@ public class ElevenLabsSwift {
                 
                 switch result {
                 case .success(let message):
-                    self.logIncomingMessage(message)
+
                     self.handleWebSocketMessage(message)
                 case .failure(let error):
                     self.logger.error("WebSocket error: \(error.localizedDescription)")
@@ -449,20 +448,10 @@ public class ElevenLabsSwift {
             }
         }
         
-        private func logIncomingMessage(_ message: URLSessionWebSocketTask.Message) {
-            switch message {
-            case .string(let text):
-                logger.info("↓ Received WebSocket message: \(text)")
-            case .data(let data):
-                logger.info("↓ Received WebSocket binary data: \(data.count) bytes")
-            @unknown default:
-                logger.warning("↓ Received unknown WebSocket message type")
-            }
-        }
-        
         private func handleWebSocketMessage(_ message: URLSessionWebSocketTask.Message) {
             switch message {
             case .string(let text):
+                
                 guard let data = text.data(using: .utf8),
                       let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
                       let type = json["type"] as? String else {
@@ -501,7 +490,13 @@ public class ElevenLabsSwift {
         private func handleInterruptionEvent(_ json: [String: Any]) {
             guard let event = json["interruption_event"] as? [String: Any],
                   let eventId = event["event_id"] as? Int else { return }
+            
             lastInterruptTimestamp = eventId
+            fadeOutAudio()
+            
+            // Clear the audio buffers and stop playback
+            clearAudioBuffers()
+            stopPlayback()
         }
         
         private func handleAgentResponseEvent(_ json: [String: Any]) {
@@ -521,6 +516,7 @@ public class ElevenLabsSwift {
                   let audioBase64 = event["audio_base_64"] as? String,
                   let eventId = event["event_id"] as? Int,
                   lastInterruptTimestamp <= eventId else { return }
+            
             addAudioBase64Chunk(audioBase64)
             updateMode(.speaking)
         }
@@ -539,8 +535,6 @@ public class ElevenLabsSwift {
                 return
             }
             
-            logger.info("↑ Sending WebSocket message: \(string)")
-            
             connection.socket.send(.string(string)) { [weak self] error in
                 if let error = error {
                     self?.logger.error("Failed to send WebSocket message: \(error.localizedDescription)")
@@ -553,12 +547,12 @@ public class ElevenLabsSwift {
             let bufferSize: AVAudioFrameCount = 4096
             let inputFormat = input.inputNode.inputFormat(forBus: 0)
             
-            // Desired output format (16000 Hz, mono, float32)
+            // Output format (16000 Hz, mono, float32)
             guard let outputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false) else {
                 logger.error("Failed to create output audio format for resampling.")
                 return
             }
-
+            
             guard let audioConverter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
                 logger.error("Failed to create audio converter.")
                 return
@@ -619,9 +613,6 @@ public class ElevenLabsSwift {
                 // Base64 encode the resampled data
                 let base64 = data.base64EncodedString()
                 
-                // Log the audio chunk being sent
-                self.logger.info("↑ Sending resampled audio chunk: \(base64.prefix(50))...")
-                
                 // Send the WebSocket message
                 let message: [String: Any] = ["user_audio_chunk": base64]
                 self.sendWebSocketMessage(message)
@@ -631,30 +622,37 @@ public class ElevenLabsSwift {
                 self.audioConcatProcessor.process(outputs: &self.outputBuffers)
             }
         }
-
-
-
-
-private func configureAudioSession() {
-    let audioSession = AVAudioSession.sharedInstance()
-    do {
-        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-        try audioSession.setPreferredSampleRate(16000)
-        try audioSession.setActive(true)
-        print("Audio Session configured with sample rate: \(audioSession.sampleRate)")
-    } catch {
-        print("Failed to configure audio session: \(error)")
-    }
-}
+        
+        
+        
+        
+        private func configureAudioSession() {
+            let audioSession = AVAudioSession.sharedInstance()
+            do {
+                // Set category to play and record with voiceChat mode for echo cancellation
+                try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+                
+                // Set preferred sample rate
+                try audioSession.setPreferredSampleRate(16000)
+                
+                // Activate the audio session
+                try audioSession.setActive(true)
+                
+                print("Audio Session configured with sample rate: \(audioSession.sampleRate)")
+            } catch {
+                print("Failed to configure audio session: \(error)")
+            }
+        }
+        
         
         private func addAudioBase64Chunk(_ chunk: String) {
-            logger.info("↓ Received audio chunk: \(chunk.prefix(50))...")
+            
             
             guard let data = ElevenLabsSwift.base64ToArrayBuffer(chunk) else {
                 callbacks.onError("Failed to decode audio chunk", nil)
                 return
             }
-
+            
             let sampleRate = Double(connection.sampleRate)
             guard let audioFormat = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
@@ -665,15 +663,15 @@ private func configureAudioSession() {
                 callbacks.onError("Failed to create AVAudioFormat", nil)
                 return
             }
-
+            
             let frameCount = data.count / MemoryLayout<Int16>.size
             guard let audioBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(frameCount)) else {
                 callbacks.onError("Failed to create AVAudioPCMBuffer", nil)
                 return
             }
-
+            
             audioBuffer.frameLength = AVAudioFrameCount(frameCount)
-
+            
             data.withUnsafeBytes { (int16Buffer: UnsafeRawBufferPointer) in
                 let int16Pointer = int16Buffer.bindMemory(to: Int16.self).baseAddress!
                 if let floatChannelData = audioBuffer.floatChannelData {
@@ -682,28 +680,27 @@ private func configureAudioSession() {
                     }
                 }
             }
-
+            
             audioBufferLock.withLock {
                 audioBuffers.append(audioBuffer)
             }
-
+            
             scheduleNextBuffer()
         }
         
         private func scheduleNextBuffer() {
             output.audioQueue.async { [weak self] in
                 guard let self = self else { return }
-
+                
                 let buffer: AVAudioPCMBuffer? = self.audioBufferLock.withLock {
                     self.audioBuffers.isEmpty ? nil : self.audioBuffers.removeFirst()
                 }
-
+                
                 guard let audioBuffer = buffer else { return }
-
+                
                 self.output.playerNode.scheduleBuffer(audioBuffer) {
                     self.scheduleNextBuffer()
                 }
-
                 if !self.output.playerNode.isPlaying {
                     self.output.playerNode.play()
                 }
@@ -711,9 +708,20 @@ private func configureAudioSession() {
         }
         
         private func fadeOutAudio() {
-    
+            // Mute agent
+            updateMode(.listening)
             
-           
+            // Fade out the volume
+            let fadeOutDuration: TimeInterval = 2.0
+            output.mixer.volume = volume
+            output.mixer.volume = 0.0001
+            
+            // Reset volume back after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + fadeOutDuration) { [weak self] in
+                guard let self = self else { return }
+                self.output.mixer.volume = self.volume
+                self.clearAudioBuffers()
+            }
         }
         
         private func updateMode(_ newMode: Mode) {
@@ -756,15 +764,29 @@ private func configureAudioSession() {
         public func getOutputVolume() -> Float {
             output.mixer.volume
         }
-
+        
         /// Starts recording audio input
         public func startRecording() {
             isProcessingInput = true
         }
-
+        
         /// Stops recording audio input
         public func stopRecording() {
             isProcessingInput = false
+        }
+        
+        private func clearAudioBuffers() {
+            audioBufferLock.withLock {
+                audioBuffers.removeAll()
+            }
+            audioConcatProcessor.handleMessage(["type": "clearInterrupted"])
+        }
+        
+        private func stopPlayback() {
+            output.audioQueue.async { [weak self] in
+                guard let self = self else { return }
+                self.output.playerNode.stop()
+            }
         }
     }
     
