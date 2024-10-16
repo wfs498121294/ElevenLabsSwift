@@ -11,6 +11,7 @@ Elevenlabs Conversational AI Swift SDK is a framework designed to integrate Elev
 > This library is launching to primarily support Conversational AI. The support for speech synthesis and other more generic use cases is planned for the future.
 
 ## Install
+
 Add the Elevenlabs Conversational AI Swift SDK to your project using Swift Package Manager:
 
 1. Open Your Project in Xcode
@@ -21,14 +22,72 @@ Add the Elevenlabs Conversational AI Swift SDK to your project using Swift Packa
    - Input the following URL: `https://github.com/elevenlabs/ElevenLabsSwift`
 4. Select Version
 5. Import the SDK
-   ```
+   ```swift
    import ElevenLabsSwift
    ```
-   
+
 ## Usage
 
-Setting Up a Conversation Session
+### Setting Up a Conversation Session
+
+1. Configure the Session
+   Create a `SessionConfig` with either an `agendId` or `signedUrl`.
+
+   ```swift
+   let config = ElevenLabsSwift.SessionConfig(agentId: "your-agent-id")
+   ```
+
+2. Define Callbacks
+   Implement callbacks to handle various conversation events.
+
+   ```swift
+   var callbacks = ElevenLabsSwift.Callbacks()
+   callbacks.onConnect = { conversationId in
+       print("Connected with ID: \(conversationId)")
+   }
+   callbacks.onMessage = { message, role in
+       print("\(role.rawValue): \(message)")
+   }
+   callbacks.onError = { error, info in
+       print("Error: \(error), Info: \(String(describing: info))")
+   }
+   callbacks.onStatusChange = { status in
+       print("Status changed to: \(status.rawValue)")
+   }
+   callbacks.onModeChange = { mode in
+       print("Mode changed to: \(mode.rawValue)")
+   }
+   ```
+
+3. Start the Conversation
+   Initiate the conversation session asynchronously.
+
+   ```swift
+   Task {
+       do {
+           let conversation = try await ElevenLabsSwift.Conversation.startSession(config: config, callbacks: callbacks)
+           // Use the conversation instance as needed
+       } catch {
+           print("Failed to start conversation: \(error)")
+       }
+   }
+   ```
+
+### Manage the Session
+
+- End Session
+
+  ```swift
+  conversation.endSession()
+  ```
+
+- Control Recording
+
+  ```swift
+  conversation.startRecording()
+  conversation.stopRecording()
+  ```
 
 ## Example
 
-Link to elevenlabs/elevenlab-examples but say coming soon
+Explore practical implementations and examples in our [ElevenLabs Examples repository](https://github.com/elevenlabs/elevenlabs-examples). (Coming soon)
