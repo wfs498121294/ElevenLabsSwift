@@ -18,12 +18,16 @@ Add the Elevenlabs Conversational AI Swift SDK to your project using Swift Packa
 2. Add Package Dependency
    - Go to `File` > `Add Packages...`
 3. Enter Repository URL
-   - Input the following URL:
-       
-
+   - Input the following URL: `https://github.com/elevenlabs/ElevenLabsSwift`
+4. Select Version
+5. Import the SDK
+   ```
+   import ElevenLabsSwift
+   ```
+   
 ## Usage
 
-Describe the usage please
+Setting Up a Conversation Session
 
 ## Example
 
