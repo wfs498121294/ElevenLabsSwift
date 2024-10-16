@@ -1,4 +1,5 @@
-![swift_readme](https://github.com/user-attachments/assets/703abddd-3ca6-493c-b9a5-dd5853932768)
+
+![convo](https://github.com/user-attachments/assets/1793b8ac-a273-4d70-ba53-f55a78179ba6)
 
 # Elevenlabs Conversational AI Swift SDK (experimental)
 
