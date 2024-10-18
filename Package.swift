@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "ElevenLabsSwift",
     platforms: [
-        .iOS(.v15)
+        .iOS(.v15),
     ],
     products: [
         .library(
@@ -15,6 +15,6 @@ let package = Package(
     targets: [
         .target(
             name: "ElevenLabsSwift"
-        )
+        ),
     ]
 )
