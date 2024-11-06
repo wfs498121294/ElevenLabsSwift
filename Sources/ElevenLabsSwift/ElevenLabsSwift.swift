@@ -10,6 +10,7 @@ public class ElevenLabsSDK {
     private enum Constants {
         static let defaultApiOrigin = "wss://api.elevenlabs.io"
         static let defaultApiPathname = "/v1/convai/conversation?agent_id="
+        static let inputSampleRate: Double = 16000
         static let sampleRate: Double = 16000
         static let ioBufferDuration: Double = 0.005
         static let volumeUpdateInterval: TimeInterval = 0.1
@@ -581,7 +582,7 @@ public class ElevenLabsSDK {
             let connection = try await Connection.create(config: config)
 
             // Step 3: Create the audio input
-            let input = try await Input.create(sampleRate: Double(connection.sampleRate))
+            let input = try await Input.create(sampleRate: Constants.inputSampleRate)
 
             // Step 4: Create the audio output
             let output = try await Output.create(sampleRate: Double(connection.sampleRate))
