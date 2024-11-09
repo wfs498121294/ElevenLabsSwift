@@ -1,6 +1,7 @@
-![convo](https://github.com/user-attachments/assets/1793b8ac-a273-4d70-ba53-f55a78179ba6)
 
 # Elevenlabs Conversational AI Swift SDK (experimental)
+
+![Frame 29](https://github.com/user-attachments/assets/d57d1b7b-325f-49f6-b752-827833f1a774)
 
 > [!WARNING]
 > This SDK is currently in development. Please do not depend on it for any production use-cases.
