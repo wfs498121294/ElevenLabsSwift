@@ -17,51 +17,51 @@ public class ElevenLabsSDK {
         static let fadeOutDuration: TimeInterval = 2.0
         static let bufferSize: AVAudioFrameCount = 1024
     }
-    
+
     // MARK: - Session Config Utilities
-    
+
     public enum Language: String, Codable, Sendable {
         case en, ja, zh, de, hi, fr, ko, pt, it, es, id, nl, tr, pl, sv, bg, ro, ar, cs, el, fi, ms, da, ta, uk, ru, hu, no, vi
     }
-    
+
     public struct AgentPrompt: Codable, Sendable {
         public var prompt: String?
-        
+
         public init(prompt: String? = nil) {
             self.prompt = prompt
         }
     }
-    
+
     public struct TTSConfig: Codable, Sendable {
         public var voiceId: String?
-        
+
         public init(voiceId: String? = nil) {
             self.voiceId = voiceId
         }
     }
-    
+
     public struct ConversationConfigOverride: Codable, Sendable {
         public var agent: AgentConfig?
         public var tts: TTSConfig?
-        
+
         public init(agent: AgentConfig? = nil, tts: TTSConfig? = nil) {
             self.agent = agent
             self.tts = tts
         }
     }
-    
+
     public struct AgentConfig: Codable, Sendable {
         public var prompt: AgentPrompt?
         public var firstMessage: String?
         public var language: Language?
-        
+
         public init(prompt: AgentPrompt? = nil, firstMessage: String? = nil, language: Language? = nil) {
             self.prompt = prompt
             self.firstMessage = firstMessage
             self.language = language
         }
     }
-    
+
     public enum LlmExtraBodyValue: Codable, Sendable {
         case string(String)
         case number(Double)
@@ -69,15 +69,15 @@ public class ElevenLabsSDK {
         case null
         case array([LlmExtraBodyValue])
         case dictionary([String: LlmExtraBodyValue])
-        
+
         var jsonValue: Any {
             switch self {
-            case .string(let str): return str
-            case .number(let num): return num
-            case .boolean(let bool): return bool
+            case let .string(str): return str
+            case let .number(num): return num
+            case let .boolean(bool): return bool
             case .null: return NSNull()
-            case .array(let arr): return arr.map { $0.jsonValue }
-            case .dictionary(let dict): return dict.mapValues { $0.jsonValue }
+            case let .array(arr): return arr.map { $0.jsonValue }
+            case let .dictionary(dict): return dict.mapValues { $0.jsonValue }
             }
         }
     }
@@ -226,24 +226,24 @@ public class ElevenLabsSDK {
             let session = URLSession(configuration: .default)
             let socket = session.webSocketTask(with: url)
             socket.resume()
-            
-            // Send initialization event if there are overrides or custom body
-             if config.overrides != nil || config.customLlmExtraBody != nil {
-                 var initEvent: [String: Any] = ["type": "conversation_initiation_client_data"]
-                 if let overrides = config.overrides,
-                      let overridesDict = overrides.dictionary {
-                       initEvent["conversation_config_override"] = overridesDict
-                   }
-                 
-                 if let customBody = config.customLlmExtraBody {
-                           initEvent["custom_llm_extra_body"] = customBody.mapValues { $0.jsonValue }
-                }
-                 
-                 let jsonData = try JSONSerialization.data(withJSONObject: initEvent)
-                 let jsonString = String(data: jsonData, encoding: .utf8)!
-                 try await socket.send(.string(jsonString))
-             }
 
+            // Send initialization event if there are overrides or custom body
+            if config.overrides != nil || config.customLlmExtraBody != nil {
+                var initEvent: [String: Any] = ["type": "conversation_initiation_client_data"]
+                if let overrides = config.overrides,
+                   let overridesDict = overrides.dictionary
+                {
+                    initEvent["conversation_config_override"] = overridesDict
+                }
+
+                if let customBody = config.customLlmExtraBody {
+                    initEvent["custom_llm_extra_body"] = customBody.mapValues { $0.jsonValue }
+                }
+
+                let jsonData = try JSONSerialization.data(withJSONObject: initEvent)
+                let jsonString = String(data: jsonData, encoding: .utf8)!
+                try await socket.send(.string(jsonString))
+            }
 
             let configData = try await receiveInitialMessage(socket: socket)
             return Connection(socket: socket, conversationId: configData.conversationId, sampleRate: configData.sampleRate)
