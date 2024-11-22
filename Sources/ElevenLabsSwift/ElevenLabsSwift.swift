@@ -252,8 +252,6 @@ public class ElevenLabsSDK {
                 initEvent["custom_llm_extra_body"] = customBody.mapValues { $0.jsonValue }
             }
 
-            print("Sending init event: \(initEvent)") // Add logging to verify the structure
-
             let jsonData = try JSONSerialization.data(withJSONObject: initEvent)
             let jsonString = String(data: jsonData, encoding: .utf8)!
             try await socket.send(.string(jsonString))
