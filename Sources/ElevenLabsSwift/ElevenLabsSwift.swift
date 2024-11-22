@@ -35,6 +35,10 @@ public class ElevenLabsSDK {
     public struct TTSConfig: Codable, Sendable {
         public var voiceId: String?
 
+        private enum CodingKeys: String, CodingKey {
+            case voiceId = "voice_id"
+        }
+
         public init(voiceId: String? = nil) {
             self.voiceId = voiceId
         }
@@ -54,6 +58,12 @@ public class ElevenLabsSDK {
         public var prompt: AgentPrompt?
         public var firstMessage: String?
         public var language: Language?
+
+        private enum CodingKeys: String, CodingKey {
+            case prompt
+            case firstMessage = "first_message"
+            case language
+        }
 
         public init(prompt: AgentPrompt? = nil, firstMessage: String? = nil, language: Language? = nil) {
             self.prompt = prompt
@@ -227,23 +237,26 @@ public class ElevenLabsSDK {
             let socket = session.webSocketTask(with: url)
             socket.resume()
 
-            // Send initialization event if there are overrides or custom body
-            if config.overrides != nil || config.customLlmExtraBody != nil {
-                var initEvent: [String: Any] = ["type": "conversation_initiation_client_data"]
-                if let overrides = config.overrides,
-                   let overridesDict = overrides.dictionary
-                {
-                    initEvent["conversation_config_override"] = overridesDict
-                }
+            // Always send initialization event
+            var initEvent: [String: Any] = ["type": "conversation_initiation_client_data"]
 
-                if let customBody = config.customLlmExtraBody {
-                    initEvent["custom_llm_extra_body"] = customBody.mapValues { $0.jsonValue }
-                }
-
-                let jsonData = try JSONSerialization.data(withJSONObject: initEvent)
-                let jsonString = String(data: jsonData, encoding: .utf8)!
-                try await socket.send(.string(jsonString))
+            // Add overrides if present
+            if let overrides = config.overrides,
+               let overridesDict = overrides.dictionary
+            {
+                initEvent["conversation_config_override"] = overridesDict
             }
+
+            // Add custom body if present
+            if let customBody = config.customLlmExtraBody {
+                initEvent["custom_llm_extra_body"] = customBody.mapValues { $0.jsonValue }
+            }
+
+            print("Sending init event: \(initEvent)") // Add logging to verify the structure
+
+            let jsonData = try JSONSerialization.data(withJSONObject: initEvent)
+            let jsonString = String(data: jsonData, encoding: .utf8)!
+            try await socket.send(.string(jsonString))
 
             let configData = try await receiveInitialMessage(socket: socket)
             return Connection(socket: socket, conversationId: configData.conversationId, sampleRate: configData.sampleRate)
