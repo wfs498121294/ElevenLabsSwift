@@ -1,4 +1,3 @@
-
 # Elevenlabs Conversational AI Swift SDK (experimental)
 
 ![convai222](https://github.com/user-attachments/assets/ca4fa726-5e98-4bbc-91b2-d055e957df7d)
@@ -7,6 +6,8 @@
 > This SDK is currently in development. Please do not depend on it for any production use-cases.
 
 Elevenlabs Conversational AI Swift SDK is a framework designed to integrate ElevenLabs' powerful conversational AI capabilities into your Swift applications. Leverage advanced audio processing and seamless WebSocket communication to create interactive and intelligent conversational voivce experiences.
+
+For detailed documentation, visit the [ElevenLabs Swift SDK documentation](https://elevenlabs.io/docs/conversational-ai/libraries/conversational-ai-sdk-swift).
 
 > [!NOTE]  
 > This library is launching to primarily support Conversational AI. The support for speech synthesis and other more generic use cases is planned for the future.
@@ -73,6 +74,40 @@ Add the Elevenlabs Conversational AI Swift SDK to your project using Swift Packa
            print("Failed to start conversation: \(error)")
        }
    }
+   ```
+
+### Advanced Configuration
+
+1. Using Client Tools
+
+   ```swift
+   var clientTools = ElevenLabsSDK.ClientTools()
+   clientTools.register("weather", handler: { async parameters throws -> String? in
+       print("Weather parameters received:", parameters)
+       ...
+   })
+
+   let conversation = try await ElevenLabsSDK.Conversation.startSession(
+       config: config,
+       callbacks: callbacks,
+       clientTools: clientTools
+   )
+   ```
+
+2. Using Overrides
+
+   ```swift
+   let overrides = ElevenLabsSDK.ConversationConfigOverride(
+       agent: ElevenLabsSDK.AgentConfig(
+           prompt: ElevenLabsSDK.AgentPrompt(prompt: "You are a helpful assistant"),
+           language: .en
+       )
+   )
+
+   let config = ElevenLabsSDK.SessionConfig(
+       agentId: "your-agent-id",
+       overrides: overrides
+   )
    ```
 
 ### Manage the Session

@@ -102,6 +102,39 @@ public class ElevenLabsSDK {
         Data(base64Encoded: base64)
     }
 
+    // MARK: - Client Tools
+
+    public typealias ClientToolHandler = @Sendable (Parameters) async throws -> String?
+
+    public typealias Parameters = [String: Any]
+
+    public struct ClientTools: Sendable {
+        private var tools: [String: ClientToolHandler] = [:]
+        private let lock = NSLock() // Ensure thread safety
+
+        public init() {}
+
+        public mutating func register(_ name: String, handler: @escaping @Sendable ClientToolHandler) {
+            lock.withLock {
+                tools[name] = handler
+            }
+        }
+
+        public func handle(_ name: String, parameters: Parameters) async throws -> String? {
+            let handler: ClientToolHandler? = lock.withLock { tools[name] }
+            guard let handler = handler else {
+                throw ClientToolError.handlerNotFound(name)
+            }
+            return try await handler(parameters)
+        }
+    }
+
+    public enum ClientToolError: Error {
+        case handlerNotFound(String)
+        case invalidParameters
+        case executionFailed(String)
+    }
+
     // MARK: - Audio Processing
 
     public class AudioConcatProcessor {
@@ -190,14 +223,14 @@ public class ElevenLabsSDK {
         public let overrides: ConversationConfigOverride?
         public let customLlmExtraBody: [String: LlmExtraBodyValue]?
 
-        public init(signedUrl: String, overrides: ConversationConfigOverride? = nil, customLlmExtraBody: [String: LlmExtraBodyValue]? = nil) {
+        public init(signedUrl: String, overrides: ConversationConfigOverride? = nil, customLlmExtraBody: [String: LlmExtraBodyValue]? = nil, clientTools _: ClientTools = ClientTools()) {
             self.signedUrl = signedUrl
             agentId = nil
             self.overrides = overrides
             self.customLlmExtraBody = customLlmExtraBody
         }
 
-        public init(agentId: String, overrides: ConversationConfigOverride? = nil, customLlmExtraBody: [String: LlmExtraBodyValue]? = nil) {
+        public init(agentId: String, overrides: ConversationConfigOverride? = nil, customLlmExtraBody: [String: LlmExtraBodyValue]? = nil, clientTools _: ClientTools = ClientTools()) {
             self.agentId = agentId
             signedUrl = nil
             self.overrides = overrides
@@ -559,6 +592,7 @@ public class ElevenLabsSDK {
         private let input: Input
         private let output: Output
         private let callbacks: Callbacks
+        private let clientTools: ClientTools?
 
         private let modeLock = NSLock()
         private let statusLock = NSLock()
@@ -649,11 +683,12 @@ public class ElevenLabsSDK {
             }
         }
 
-        private init(connection: Connection, input: Input, output: Output, callbacks: Callbacks) {
+        private init(connection: Connection, input: Input, output: Output, callbacks: Callbacks, clientTools: ClientTools?) {
             self.connection = connection
             self.input = input
             self.output = output
             self.callbacks = callbacks
+            self.clientTools = clientTools
 
             // Set the onProcess callback
             audioConcatProcessor.onProcess = { [weak self] finished in
@@ -672,8 +707,9 @@ public class ElevenLabsSDK {
         /// - Parameters:
         ///   - config: Session configuration
         ///   - callbacks: Callbacks for conversation events
+        ///   - clientTools: Client tools callbacks (optional)
         /// - Returns: A started `Conversation` instance
-        public static func startSession(config: SessionConfig, callbacks: Callbacks = Callbacks()) async throws -> Conversation {
+        public static func startSession(config: SessionConfig, callbacks: Callbacks = Callbacks(), clientTools: ClientTools? = nil) async throws -> Conversation {
             // Step 1: Configure the audio session
             try ElevenLabsSDK.configureAudioSession()
 
@@ -687,7 +723,7 @@ public class ElevenLabsSDK {
             let output = try await Output.create(sampleRate: Double(connection.sampleRate))
 
             // Step 5: Initialize the Conversation
-            let conversation = Conversation(connection: connection, input: input, output: output, callbacks: callbacks)
+            let conversation = Conversation(connection: connection, input: input, output: output, callbacks: callbacks, clientTools: clientTools)
 
             // Step 6: Start the AVAudioEngine
             try output.engine.start()
@@ -740,6 +776,9 @@ public class ElevenLabsSDK {
                 }
 
                 switch type {
+                case "client_tool_call":
+                    handleClientToolCall(json)
+
                 case "interruption":
                     handleInterruptionEvent(json)
 
@@ -773,6 +812,52 @@ public class ElevenLabsSDK {
 
             @unknown default:
                 callbacks.onError("Received unknown message type", nil)
+            }
+        }
+
+        private func handleClientToolCall(_ json: [String: Any]) {
+            guard let toolCall = json["client_tool_call"] as? [String: Any],
+                  let toolName = toolCall["tool_name"] as? String,
+                  let toolCallId = toolCall["tool_call_id"] as? String,
+                  let parameters = toolCall["parameters"] as? [String: Any]
+            else {
+                callbacks.onError("Invalid client tool call format", json)
+                return
+            }
+
+            // Serialize parameters to JSON Data for thread-safety
+            let serializedParameters: Data
+            do {
+                serializedParameters = try JSONSerialization.data(withJSONObject: parameters, options: [])
+            } catch {
+                callbacks.onError("Failed to serialize parameters", error)
+                return
+            }
+
+            // Execute in a Task (now safe because of serializedParameters)
+            Task { [toolName, toolCallId, serializedParameters] in
+                do {
+                    // Deserialize within the Task to pass into clientTools.handle
+                    let deserializedParameters = try JSONSerialization.jsonObject(with: serializedParameters) as? [String: Any] ?? [:]
+
+                    let result = try await clientTools?.handle(toolName, parameters: deserializedParameters)
+
+                    let response: [String: Any] = [
+                        "type": "client_tool_result",
+                        "tool_call_id": toolCallId,
+                        "result": result ?? "",
+                        "is_error": false,
+                    ]
+                    sendWebSocketMessage(response)
+                } catch {
+                    let response: [String: Any] = [
+                        "type": "client_tool_result",
+                        "tool_call_id": toolCallId,
+                        "result": error.localizedDescription,
+                        "is_error": true,
+                    ]
+                    sendWebSocketMessage(response)
+                }
             }
         }
 
