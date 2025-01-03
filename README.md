@@ -127,4 +127,4 @@ Add the Elevenlabs Conversational AI Swift SDK to your project using Swift Packa
 
 ## Example
 
-Explore practical implementations and examples in our [ElevenLabs Examples repository](https://github.com/elevenlabs/elevenlabs-examples). (Coming soon)
+Explore examples in the [ElevenLabs Examples repository](https://github.com/elevenlabs/elevenlabs-examples/tree/main/examples/conversational-ai/swift).
