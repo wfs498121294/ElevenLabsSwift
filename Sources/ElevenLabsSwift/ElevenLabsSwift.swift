@@ -216,8 +216,8 @@ public class ElevenLabsSDK {
     }
 
     // MARK: - Connection
-    
-    public enum DynamicVariableValue : Sendable{
+
+    public enum DynamicVariableValue: Sendable {
         case string(String)
         case number(Double)
         case boolean(Bool)
@@ -294,7 +294,7 @@ public class ElevenLabsSDK {
             if let customBody = config.customLlmExtraBody {
                 initEvent["custom_llm_extra_body"] = customBody.mapValues { $0.jsonValue }
             }
-            
+
             // add dynamic variables if present
             if let dynamicVars = config.dynamicVariables {
                 initEvent["dynamic_variables"] = dynamicVars
