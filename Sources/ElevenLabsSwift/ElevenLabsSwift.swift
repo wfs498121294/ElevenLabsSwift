@@ -216,25 +216,35 @@ public class ElevenLabsSDK {
     }
 
     // MARK: - Connection
+    
+    public enum DynamicVariableValue : Sendable{
+        case string(String)
+        case number(Double)
+        case boolean(Bool)
+        case int(Int)
+    }
 
     public struct SessionConfig: Sendable {
         public let signedUrl: String?
         public let agentId: String?
         public let overrides: ConversationConfigOverride?
         public let customLlmExtraBody: [String: LlmExtraBodyValue]?
+        public let dynamicVariables: [String: DynamicVariableValue]?
 
-        public init(signedUrl: String, overrides: ConversationConfigOverride? = nil, customLlmExtraBody: [String: LlmExtraBodyValue]? = nil, clientTools _: ClientTools = ClientTools()) {
+        public init(signedUrl: String, overrides: ConversationConfigOverride? = nil, customLlmExtraBody: [String: LlmExtraBodyValue]? = nil, clientTools _: ClientTools = ClientTools(), dynamicVariables: [String: DynamicVariableValue]? = nil) {
             self.signedUrl = signedUrl
             agentId = nil
             self.overrides = overrides
             self.customLlmExtraBody = customLlmExtraBody
+            self.dynamicVariables = dynamicVariables
         }
 
-        public init(agentId: String, overrides: ConversationConfigOverride? = nil, customLlmExtraBody: [String: LlmExtraBodyValue]? = nil, clientTools _: ClientTools = ClientTools()) {
+        public init(agentId: String, overrides: ConversationConfigOverride? = nil, customLlmExtraBody: [String: LlmExtraBodyValue]? = nil, clientTools _: ClientTools = ClientTools(), dynamicVariables: [String: DynamicVariableValue]? = nil) {
             self.agentId = agentId
             signedUrl = nil
             self.overrides = overrides
             self.customLlmExtraBody = customLlmExtraBody
+            self.dynamicVariables = dynamicVariables
         }
     }
 
@@ -283,6 +293,11 @@ public class ElevenLabsSDK {
             // Add custom body if present
             if let customBody = config.customLlmExtraBody {
                 initEvent["custom_llm_extra_body"] = customBody.mapValues { $0.jsonValue }
+            }
+            
+            // add dynamic variables if present
+            if let dynamicVars = config.dynamicVariables {
+                initEvent["dynamic_variables"] = dynamicVars
             }
 
             let jsonData = try JSONSerialization.data(withJSONObject: initEvent)
