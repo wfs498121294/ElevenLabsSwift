@@ -769,7 +769,7 @@ public class ElevenLabsSDK {
                 case let .failure(error):
                     self.logger.error("WebSocket error: \(error.localizedDescription)")
                     self.callbacks.onError("WebSocket error", error)
-                    self.updateStatus(.disconnected)
+                    self.endSession()
                 }
 
                 if self.status == .connected {
