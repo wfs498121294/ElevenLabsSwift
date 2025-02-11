@@ -222,6 +222,15 @@ public class ElevenLabsSDK {
         case number(Double)
         case boolean(Bool)
         case int(Int)
+        
+        var jsonValue: Any {
+            switch self {
+            case .string(let str): return str
+            case .number(let num): return num
+            case .boolean(let bool): return bool
+            case .int(let int): return int
+            }
+        }
     }
 
     public struct SessionConfig: Sendable {
@@ -295,9 +304,9 @@ public class ElevenLabsSDK {
                 initEvent["custom_llm_extra_body"] = customBody.mapValues { $0.jsonValue }
             }
 
-            // add dynamic variables if present
+            // Add dynamic variables if present - Convert to JSON-compatible values
             if let dynamicVars = config.dynamicVariables {
-                initEvent["dynamic_variables"] = dynamicVars
+                initEvent["dynamic_variables"] = dynamicVars.mapValues { $0.jsonValue }
             }
 
             let jsonData = try JSONSerialization.data(withJSONObject: initEvent)
