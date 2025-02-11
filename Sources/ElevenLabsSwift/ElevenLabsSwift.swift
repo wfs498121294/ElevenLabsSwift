@@ -222,13 +222,13 @@ public class ElevenLabsSDK {
         case number(Double)
         case boolean(Bool)
         case int(Int)
-        
+
         var jsonValue: Any {
             switch self {
-            case .string(let str): return str
-            case .number(let num): return num
-            case .boolean(let bool): return bool
-            case .int(let int): return int
+            case let .string(str): return str
+            case let .number(num): return num
+            case let .boolean(bool): return bool
+            case let .int(int): return int
             }
         }
     }
