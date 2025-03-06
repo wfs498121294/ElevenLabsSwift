@@ -947,7 +947,7 @@ public class ElevenLabsSDK {
             // Since server can handle 16MB and base64 encoding increases size by ~33%,
             // we'll use 12MB as our raw chunk size to stay safely under the limit
             let maxRawChunkSize = 12 * 1024 * 1024
-            
+
             input.setRecordCallback { [weak self] buffer, rms in
                 guard let self = self, self.isProcessingInput else { return }
 
@@ -955,7 +955,7 @@ public class ElevenLabsSDK {
                 if let int16ChannelData = buffer.int16ChannelData {
                     let frameLength = Int(buffer.frameLength)
                     let totalSize = frameLength * MemoryLayout<Int16>.size
-                    
+
                     // In most cases, the buffer will be small enough to send in one chunk
                     if totalSize <= maxRawChunkSize {
                         // Send the entire buffer at once
@@ -968,12 +968,12 @@ public class ElevenLabsSDK {
                         var offset = 0
                         while offset < totalSize {
                             let chunkSize = min(maxRawChunkSize, totalSize - offset)
-                            let chunkData = Data(bytes: int16ChannelData[0].advanced(by: offset/2), count: chunkSize)
+                            let chunkData = Data(bytes: int16ChannelData[0].advanced(by: offset / 2), count: chunkSize)
                             let base64String = chunkData.base64EncodedString()
-                            
+
                             let message: [String: Any] = ["type": "user_audio_chunk", "user_audio_chunk": base64String]
                             self.sendWebSocketMessage(message)
-                            
+
                             offset += chunkSize
                         }
                     }
