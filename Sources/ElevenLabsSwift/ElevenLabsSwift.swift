@@ -581,12 +581,12 @@ public class ElevenLabsSDK {
             // see AVAudioEngine documentation
             playerNode.stop()
         }
-        
+
         public func startPlaying() throws {
             try engine.start()
             playerNode.play()
         }
-        
+
         @objc private func handleInterruption() throws {
             engine.connect(playerNode, to: mixer, format: audioFormat)
             engine.connect(mixer, to: engine.mainMixerNode, format: audioFormat)
