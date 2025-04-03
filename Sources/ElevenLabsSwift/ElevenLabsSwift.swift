@@ -1214,7 +1214,7 @@ public class ElevenLabsSDK {
             // try audioSession.setCategory(.playback, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
 
             try audioSession.setCategory(.playAndRecord,
-                             mode: .voiceChat,
+                             mode: .default,
                              options: [.allowBluetooth, .defaultToSpeaker])
 
             // Set preferred IO buffer duration for lower latency
