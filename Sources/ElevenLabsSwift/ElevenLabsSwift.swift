@@ -1227,6 +1227,9 @@ public class ElevenLabsSDK {
             // Activate the session
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+
         } catch {
             print("Failed to configure audio session: \(error.localizedDescription)")
             throw error
