@@ -1233,6 +1233,9 @@ public class ElevenLabsSDK {
 
             //try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers])
             try AVAudioSession.sharedInstance().setActive(true)
+            
+            audioSession.overrideOutputAudioPort(.speaker)
+
 
         } catch {
             print("Failed to configure audio session: \(error.localizedDescription)")
